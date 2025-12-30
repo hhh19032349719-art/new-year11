@@ -1,0 +1,366 @@
+import os
+import webbrowser
+
+# 完整的 HTML/CSS/JavaScript 页面内容
+html_content = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 新年快乐 - 极致视觉版</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: "Microsoft YaHei", "SimHei", sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            user-select: none;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #fireworksCanvas { z-index: 1; }
+        #flowerCanvas { z-index: 2; pointer-events: none; }
+
+        #text-container {
+            z-index: 10;
+            color: #fff;
+            text-align: center;
+            position: absolute;
+            top: 18%; 
+            width: 100%;
+            pointer-events: none;
+        }
+
+        .big-text {
+            font-size: 8rem;
+            font-weight: 900;
+            opacity: 0;
+            transform: scale(0.3);
+            transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-shadow: 0 0 20px #ff0055, 0 0 40px #ff0055;
+            color: #fff;
+        }
+
+        .message-text {
+            font-size: 4.5rem;
+            font-weight: bold;
+            opacity: 0;
+            letter-spacing: 6px;
+            background: linear-gradient(135deg, #fff 20%, #ff99cc, #ff3399);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            transform: translateY(30px);
+            transition: all 0.8s ease-out;
+            filter: drop-shadow(0 5px 15px rgba(255,51,153,0.4));
+            padding: 0 20px;
+            line-height: 1.4;
+        }
+
+        .visible {
+            opacity: 1 !important;
+            transform: scale(1) translateY(0) !important;
+        }
+
+        /* 启动屏幕 */
+        #start-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at center, #1a0a2e 0%, #000 100%);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1.2s ease;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .main-btn {
+            padding: 20px 50px;
+            font-size: 1.8rem;
+            color: #ff99cc;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #ff99cc;
+            backdrop-filter: blur(15px);
+            border-radius: 60px;
+            box-shadow: 0 0 30px rgba(255, 153, 204, 0.4);
+            cursor: pointer;
+            transition: all 0.3s;
+            animation: pulse-btn 2s infinite;
+        }
+
+        .sub-btn {
+            padding: 10px 30px;
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .sub-btn.clicked {
+            background: rgba(255, 0, 0, 0.2);
+            border-color: #ff0000;
+            color: #ff0000;
+            transform: scale(0.9);
+        }
+
+        @keyframes pulse-btn {
+            0% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 153, 204, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 0 50px rgba(255, 153, 204, 0.7); }
+            100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 153, 204, 0.4); }
+        }
+
+        .hidden { opacity: 0; pointer-events: none; }
+
+        @media screen and (max-width: 768px) {
+            .big-text { font-size: 4rem; }
+            .message-text { font-size: 2.2rem; letter-spacing: 2px; }
+            #text-container { top: 15%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <div class="btn-group">
+            <div id="start-btn" class="main-btn">🎆 开启 2026 新年惊喜 🎆</div>
+            <div id="no-btn" class="sub-btn">不看</div>
+        </div>
+        <p id="tip-text" style="color: #ff99cc; margin-top: 25px; font-size: 1.1rem; opacity: 0.9;">岁岁年年，万事如意</p>
+    </div>
+
+    <canvas id="fireworksCanvas"></canvas>
+    <canvas id="flowerCanvas"></canvas>
+
+    <div id="text-container">
+        <div id="content" class="big-text"></div>
+    </div>
+
+<script>
+    let isStarted = false;
+    const fwCanvas = document.getElementById('fireworksCanvas');
+    const fwCtx = fwCanvas.getContext('2d');
+    let fwWidth, fwHeight;
+    let fireworks = [];
+    let particles = [];
+
+    function resize() {
+        fwWidth = window.innerWidth;
+        fwHeight = window.innerHeight;
+        fwCanvas.width = fwWidth;
+        fwCanvas.height = fwHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    class Firework {
+        constructor() {
+            this.x = Math.random() * fwWidth;
+            this.y = fwHeight;
+            this.tx = Math.random() * fwWidth;
+            this.ty = Math.random() * (fwHeight * 0.4);
+            this.speed = 3;
+            this.accel = 1.04;
+            this.angle = Math.atan2(this.ty - this.y, this.tx - this.x);
+            this.hue = Math.random() * 360;
+        }
+        update(i) {
+            this.speed *= this.accel;
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed;
+            if (this.y <= this.ty) {
+                explode(this.x, this.y, this.hue);
+                fireworks.splice(i, 1);
+            }
+        }
+        draw() {
+            fwCtx.beginPath();
+            fwCtx.arc(this.x, this.y, 2, 0, 7);
+            fwCtx.fillStyle = `hsl(${this.hue}, 100%, 70%)`;
+            fwCtx.fill();
+        }
+    }
+
+    class Particle {
+        constructor(x, y, hue) {
+            this.x = x; this.y = y;
+            this.angle = Math.random() * Math.PI * 2;
+            this.speed = Math.random() * 8 + 2;
+            this.friction = 0.95;
+            this.gravity = 0.15;
+            this.hue = hue + (Math.random() - 0.5) * 40;
+            this.alpha = 1;
+            this.decay = Math.random() * 0.015 + 0.01;
+            this.sparkle = Math.random() > 0.8;
+        }
+        update(i) {
+            this.speed *= this.friction;
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed + this.gravity;
+            this.alpha -= this.decay;
+            if (this.alpha <= 0) particles.splice(i, 1);
+        }
+        draw() {
+            fwCtx.beginPath();
+            fwCtx.arc(this.x, this.y, this.sparkle ? Math.random() * 3 : 1.5, 0, Math.PI * 2);
+            let light = this.sparkle ? Math.random() * 100 : 60;
+            fwCtx.fillStyle = `hsla(${this.hue}, 100%, ${light}%, ${this.alpha})`;
+            fwCtx.fill();
+        }
+    }
+
+    function explode(x, y, hue) {
+        let count = 120;
+        while(count--) particles.push(new Particle(x, y, hue));
+    }
+
+    const flCanvas = document.getElementById('flowerCanvas');
+    const flCtx = flCanvas.getContext('2d');
+    let flowerParticles = [];
+    let showFlower = false;
+
+    function createCarnation() {
+        flowerParticles = [];
+        const layers = 110; 
+        for (let i = 0; i < layers; i++) {
+            const p = i / layers;
+            const radius = 180 * Math.pow(p, 0.5); 
+            const layerPoints = 130 + i * 5;
+            for (let j = 0; j < layerPoints; j++) {
+                const angle = (j / layerPoints) * Math.PI * 2;
+                const ripple = Math.sin(angle * (14 + (i%3))) * 15 * p;
+                const r = radius + ripple + (Math.random() - 0.5) * 12;
+                const x = r * Math.cos(angle);
+                const z = r * Math.sin(angle);
+                const y = -i * 1.5 + (r*r)/500 + (Math.random()-0.5)*15;
+
+                const hue = 320 + Math.random() * 40; 
+                const lightness = 45 + (1-p) * 40;
+                flowerParticles.push({
+                    x, y, z, baseX: x, baseY: y, baseZ: z,
+                    color: `hsla(${hue}, 95%, ${lightness}%, ${0.6 + Math.random()*0.4})`,
+                    size: 2.5 + Math.random() * 3
+                });
+            }
+        }
+        for(let k=0; k<180; k++) {
+            flowerParticles.push({
+                x: (Math.random()-0.5)*10, y: 30 + k * 2.5, z: (Math.random()-0.5)*10,
+                baseX: (Math.random()-0.5)*10, baseY: 30 + k * 2.5, baseZ: (Math.random()-0.5)*10,
+                color: `hsla(130, 70%, ${15 + k/6}%, 0.95)`,
+                size: 4
+            });
+        }
+    }
+
+    let rotY = 0;
+    function animate() {
+        requestAnimationFrame(animate);
+        fwCtx.globalCompositeOperation = 'destination-out';
+        fwCtx.fillStyle = 'rgba(0,0,0,0.25)';
+        fwCtx.fillRect(0,0,fwWidth,fwHeight);
+        fwCtx.globalCompositeOperation = 'lighter';
+        fireworks.forEach((f, i) => f.update(i) || f.draw());
+        particles.forEach((p, i) => p.update(i) || p.draw());
+        if (isStarted && Math.random() < 0.1) fireworks.push(new Firework());
+
+        if (showFlower) {
+            flCtx.clearRect(0,0,window.innerWidth, window.innerHeight);
+            rotY += 0.012;
+            const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+            const fov = 450;
+            flowerParticles.sort((a,b) => b.tz - a.tz);
+            flowerParticles.forEach(p => {
+                let x = p.baseX * Math.cos(rotY) - p.baseZ * Math.sin(rotY);
+                let z = p.baseX * Math.sin(rotY) + p.baseZ * Math.cos(rotY);
+                let y = p.baseY;
+                p.tz = z;
+                let scale = fov / (fov + z + 250);
+                let x2d = x * scale + cx;
+                let y2d = y * scale + cy * 1.5; 
+                flCtx.fillStyle = p.color;
+                flCtx.beginPath();
+                flCtx.arc(x2d, y2d, p.size * scale, 0, 7);
+                flCtx.fill();
+            });
+        }
+    }
+
+    async function startSequence() {
+        const content = document.getElementById('content');
+        const set = async (t, m=false) => {
+            content.classList.remove('visible');
+            await new Promise(r => setTimeout(r, 600));
+            content.innerHTML = t;
+            content.className = m ? 'message-text visible' : 'big-text visible';
+        };
+
+        for(let i=5; i>0; i--) { await set(i); await new Promise(r => setTimeout(r, 800)); }
+        await set("2026");
+        for(let i=0; i<25; i++) setTimeout(() => fireworks.push(new Firework()), i * 80);
+        await new Promise(r => setTimeout(r, 2000));
+        await set("新年新气象", true);
+        await new Promise(r => setTimeout(r, 2000));
+        await set("祝我老妈新年快乐", true);
+        await new Promise(r => setTimeout(r, 2000));
+        await set("事事如意", true);
+        await new Promise(r => setTimeout(r, 2000));
+        showFlower = true;
+        await set("天天开心", true);
+    }
+
+    const startBtn = document.getElementById('start-btn');
+    const noBtn = document.getElementById('no-btn');
+    const startScreen = document.getElementById('start-screen');
+    const tipText = document.getElementById('tip-text');
+
+    noBtn.addEventListener('click', () => {
+        if(noBtn.classList.contains('clicked')) return;
+        noBtn.innerHTML = "都要看！";
+        noBtn.classList.add('clicked');
+        setTimeout(() => {
+            noBtn.innerHTML = "不看";
+            noBtn.classList.remove('clicked');
+        }, 2000);
+    });
+
+    startBtn.addEventListener('click', () => {
+        isStarted = true;
+        startScreen.classList.add('hidden');
+        createCarnation();
+        animate();
+        startSequence();
+    });
+</script>
+</body>
+</html>
+"""
+
+# 写入文件并打开
+file_path = "happy_new_year_mom.html"
+with open(file_path, "w", encoding="utf-8") as f:
+    f.write(html_content)
+
+# 获取文件的绝对路径并用浏览器打开
+webbrowser.open("file://" + os.path.abspath(file_path))
+print(f"✅ 已为您生成给老妈的新年祝福网页: {file_path}")
